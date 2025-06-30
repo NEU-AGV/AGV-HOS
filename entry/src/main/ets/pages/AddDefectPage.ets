@@ -3,7 +3,7 @@
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { Task } from '../model/Task';
-import DefectService from '../services/DefectService';
+import DefectService from '../services/ApiService';
 
 // 新增：为 Select 组件的选项定义一个标准接口
 interface SelectOption {

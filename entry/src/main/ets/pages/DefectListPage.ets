@@ -2,7 +2,7 @@
 
 import router from '@ohos.router';
 import { Defect } from '../model/Defect';
-import DefectService from '../services/DefectService';
+import DefectService from '../services/ApiService';
 
 // 新增：为标签样式定义一个接口
 interface TagColorStyle {
@@ -119,12 +119,21 @@ struct DefectListPage {
     Stack() {
     Column() {
       // --- Header ---
-      Text('缺陷管理')
-        .fontSize(24)
-        .fontWeight(FontWeight.Bold)
-        .padding(10)
-        .width('100%')
-        .textAlign(TextAlign.Start)
+      Row() {
+        Text('缺陷管理')
+          .fontSize(24).fontWeight(FontWeight.Bold)
+
+        // 使用 Blank 组件将按钮推到最右侧
+        Blank()
+
+        Button('任务列表')
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/TaskListPage' })
+          })
+          .type(ButtonType.Capsule)
+          .backgroundColor('#007DFF') // 使用一个醒目的颜色
+      }
+      .width('100%').padding(10). alignItems(VerticalAlign.Center)
 
       // --- Search Form Area ---
       Column() {

@@ -30,6 +30,17 @@ interface AddDefectData {
   discoveryTime: string;
 }
 
+// --- Task Service Interfaces ---
+// 对应 getTasks 的参数
+interface GetTasksParams {
+  startDate: string;
+  endDate: string;
+}
+interface GetTasksResponse {
+  list: Task[];
+  total?: number; // total 属性可能是可选的
+}
+
 // Switch to true to simulate API calls, false to use local mock data
 const USE_REAL_API = false;
 const BASE_URL = 'https://your.api.backend.com'; // Replace with your actual API endpoint
@@ -41,16 +52,21 @@ const mockDataSource: Defect[] = [
   { id: 3, defectId: 'DEF-2024-003', taskId:'',taskName: '3号线日常巡视', defectType: '设备故障', description: '信号机S-34无显示，疑似电源故障。', imageUrl: 'https://fuss10.elemecdn.com/0/6f/e35ff375812e6b0020b6b4e8f9583jpeg.jpeg', severity: '高', isVerified: true, currentStatus: '已确认', discoverer: '吴八', discoveryTime: '2025-06-25 09:15', discoveryMethod: '人工巡检', confirmer: '刘工', confirmationTime: '2025-06-25 10:00', handler: '', handlingStartTime: '', handlingCompletionTime: '', handlingResult: ''},
   { id: 4, defectId: 'DEF-2024-004',taskId:'', taskName: '1号线隧道巡检', defectType: '照明问题', description: 'K130附近连续3盏照明灯不亮。', imageUrl: 'https://fuss10.elemecdn.com/a/3f/3302e58f9a181d2509f3dc0fa68b0jpeg.jpeg', severity: '低', isVerified: true, currentStatus: '待确认', discoverer: '李四', discoveryTime: '2025-06-25 11:20', discoveryMethod: '人工巡检', confirmer: '', confirmationTime: '', handler: '', handlingStartTime: '', handlingCompletionTime: '', handlingResult: ''},
 ];
+//任务管理的模拟数据
+const mockTasks: Task[] = [
+  { id: 1, taskId: 'TASK-20250626-001', taskName: '1号线隧道巡检', taskType: '例行巡检', priority: '高', description: '对1号线K10-K15段进行全面结构巡检。', creator: '张三', executor: '李四', helper: '王二麻子', plannedStartTime: '2025-06-26 09:00', plannedEndTime: '2025-06-26 12:00', actualStartTime: '2025-06-26 09:05', actualEndTime: '2025-06-26 11:45', line: '1号线', startLocation: 'K10', endLocation: 'K15', scope: '全断面', status: '已完成', progress: 100, result: '巡检完成，发现3处轻微裂缝。', problemsFound: 3, uploadTime: '2025-06-26 13:00' },
+  { id: 2, taskId: 'TASK-20250627-001', taskName: '2号线设备检查', taskType: '专项检查', priority: '中', description: '检查2号线信号机S5-S8状态。', creator: '王五', executor: '赵六', helper: '孙七', plannedStartTime: '2025-06-27 14:00', plannedEndTime: '2025-06-27 16:00', actualStartTime: '2025-06-27 14:10', actualEndTime: '', line: '2号线', startLocation: 'S5信号机', endLocation: 'S8信号机', scope: '信号设备', status: '进行中', progress: 60, result: '正在处理中...', problemsFound: 1, uploadTime: '' },
+  { id: 3, taskId: 'TASK-20250628-001', taskName: '3号线日常巡视', taskType: '日常巡视', priority: '低', description: '3号线全线轨道异物巡视。', creator: '陈七', executor: '吴八', helper: '周九', plannedStartTime: '2025-06-28 08:30', plannedEndTime: '2025-06-28 12:30', actualStartTime: '', actualEndTime: '', line: '3号线', startLocation: '始发站', endLocation: '终点站', scope: '轨道面', status: '待执行', progress: 0, result: '', problemsFound: 0, uploadTime: '' },
+];
 
-class DefectService {
-
+class ApiService {
   // Corresponds to getDefects in defects.js
   async getDefects(params: GetDefectsParams): Promise<GetDefectsResponse> {
     if (USE_REAL_API) {
       const httpRequest = http.createHttp();
       // This is a simplified GET request. You'd need to properly build the URL with params.
       const response = await httpRequest.request(`${BASE_URL}/defects?page=${params.currentPage}&pageSize=${params.pageSize}`);
-      return JSON.parse(response.result as string);
+      return JSON.parse(response.result as string) as GetDefectsResponse;;
     } else {
       // Mock filtering logic from DefectManagement.vue
       return new Promise((resolve) => {
@@ -135,37 +151,53 @@ class DefectService {
     }
   }
 
-  // Corresponds to "获取可选任务列表" requirement
-  async getTasks(): Promise<Task[]> {
+  /**
+   * 获取任务列表 (支持按日期范围筛选)
+   * @param params
+   */
+  async getTasks(params?: GetTasksParams): Promise<Task[]> {
     if (USE_REAL_API) {
-      // Implement real API call here
-      return [];
-    } else {
-      // 修改点 3：在 map 中明确返回 Task 类型
-      const allTasks: Task[] = mockDataSource.map((item: Defect): Task => {
-        const task: Task = {
-          taskId: item.taskId,
-          taskName: item.taskName
-        };
-        return task;
+      const httpRequest = http.createHttp();
+      // 真实 API 请求
+      const response = await httpRequest.request(`${BASE_URL}/tasks`, {
+        method: http.RequestMethod.GET,
+        extraData: params
       });
+      const result = JSON.parse(response.result as string) as GetTasksResponse;
+      return result.list; // 假设后端返回 { list: [], total: ... }
+    } else {
+      // 模拟数据逻辑
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          // 模拟筛选，实际项目中后端会处理
+          resolve(mockTasks);
+        }, 300);
+      });
+    }
+  }
 
-      // 修改点 4：使用更兼容的方式去重，避免使用扩展运算符和属性索引
-      const uniqueTasksMap = new Map<string, Task>();
-      for (const task of allTasks) {
-        // 使用点操作符访问属性
-        if (!uniqueTasksMap.has(task.taskId)) {
-          uniqueTasksMap.set(task.taskId, task);
+  /**
+   * 删除一个任务
+   * @param taskId
+   */
+  async deleteTask(taskId: string): Promise<void> {
+    if (USE_REAL_API) {
+      const httpRequest = http.createHttp();
+      await httpRequest.request(`${BASE_URL}/tasks/${taskId}`, {
+        method: http.RequestMethod.DELETE
+      });
+    } else {
+      // 模拟删除
+      return new Promise((resolve) => {
+        const index = mockTasks.findIndex(t => t.taskId === taskId);
+        if (index > -1) {
+          mockTasks.splice(index, 1);
         }
-      }
-
-      const result: Task[] = [];
-      for(const task of uniqueTasksMap.values()){
-        result.push(task);
-      }
-      return result;
+        resolve();
+      });
     }
   }
 }
 
-export default new DefectService();
+
+export default new ApiService();

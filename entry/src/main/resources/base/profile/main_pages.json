@@ -2,6 +2,8 @@
   "src": [
     "pages/AddDefectPage",
     "pages/DefectDetailPage",
-    "pages/DefectListPage"
+    "pages/DefectListPage",
+    "pages/TaskDetailPage",
+    "pages/TaskListPage"
   ]
 }

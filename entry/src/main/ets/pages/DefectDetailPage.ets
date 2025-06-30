@@ -3,7 +3,7 @@
 import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { Defect } from '../model/Defect';
-import DefectService from '../services/DefectService';
+import DefectService from '../services/ApiService';
 
 // 新增：为页面路由参数定义接口
 interface DetailPageParams {
