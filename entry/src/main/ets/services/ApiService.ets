@@ -3,6 +3,7 @@
 import http from '@ohos.net.http';
 import { Defect } from '../model/Defect';
 import { Task } from '../model/Task';
+import authService from './AuthService';
 
 // 新增：为 getDefects 的参数创建一个接口
 interface GetDefectsParams {
@@ -20,11 +21,13 @@ interface GetDefectsResponse {
 }
 // 新增：为 addDefect 的参数创建一个接口，替代 Omit
 interface AddDefectData {
+  defectId: string;
   taskName: string;
   taskId: string;
   description: string;
   defectType: string;
   severity: '高' | '中' | '低';
+  currentStatus: '待确认' | '已确认' | '处理中' | '已整改';
   discoverer: string;
   imageUrl: string;
   discoveryTime: string;
@@ -36,14 +39,41 @@ interface GetTasksParams {
   startDate: string;
   endDate: string;
 }
+// 修正1：修改接口以匹配后端真实的返回结构（records）
 interface GetTasksResponse {
-  list: Task[];
-  total?: number; // total 属性可能是可选的
+  records: Task[]; // 将 list 修改为 records
+  total?: number;
+  size?: number;
+  current?: number;
+  pages?: number;
+}
+// 新增：为后端返回的最外层结构定义一个通用接口
+interface ApiResponse<T> {
+  code: number;
+  message: string;
+  data: T; // 使用泛型，T 可以是 GetDefectsResponse 或 GetTasksResponse
+}
+
+// --- 新增用户相关的接口定义 ---
+interface LoginParams {
+  username: string;
+  password?: string;
+  captcha: string;
+  uuid: string;
+}
+
+interface LoginResponse {
+  token: string;
+}
+
+interface CaptchaResponse {
+  uuid: string;
+  img: string; // Base64 格式的图片
 }
 
 // Switch to true to simulate API calls, false to use local mock data
-const USE_REAL_API = false;
-const BASE_URL = 'https://your.api.backend.com'; // Replace with your actual API endpoint
+const USE_REAL_API = true;
+const BASE_URL = 'http://172.22.49.179:8080'; // Replace with your actual API endpoint
 
 // Mock data source transcribed from DefectManagement.vue
 const mockDataSource: Defect[] = [
@@ -60,15 +90,104 @@ const mockTasks: Task[] = [
 ];
 
 class ApiService {
+
+  // --- 新增：用户认证方法 ---
+
+  // 关键修正：适配后端返回的 {code, message, data:{uuid, img}} 结构
+  async getCaptcha(): Promise<CaptchaResponse> {
+    const httpRequest = http.createHttp();
+    try {
+      const response = await httpRequest.request(`${BASE_URL}/captcha`, {
+        method: http.RequestMethod.GET
+      });
+
+      console.info('API_DEBUG', `Raw Captcha Response: ${response.result}`);
+
+      if (response.responseCode === http.ResponseCode.OK && typeof response.result === 'string') {
+        // 解析最外层的 ApiResponse，其 data 字段的类型是 CaptchaResponse
+        const parsedResult = JSON.parse(response.result as string) as ApiResponse<CaptchaResponse>;
+
+        // 检查 data 字段及其内部的属性是否存在
+        if (parsedResult && parsedResult.data && parsedResult.data.uuid && parsedResult.data.img) {
+          // 返回 data 字段，这才是我们真正需要的数据
+          return parsedResult.data;
+        }
+      }
+      console.error('API_DEBUG', `getCaptcha: Backend response format is incorrect.`);
+    } catch (error) {
+      console.error('API_DEBUG', `Exception during getCaptcha request: ${JSON.stringify(error)}`);
+    }
+    // 所有失败路径最终都会抛出异常
+    throw new Error("获取验证码失败");
+  }
+
+  // 关键修正：适配后端返回的 {code, data: {token}} 结构
+  async login(data: LoginParams): Promise<LoginResponse> {
+    const httpRequest = http.createHttp();
+    try {
+      const response = await httpRequest.request(`${BASE_URL}/login`, {
+        method: http.RequestMethod.POST,
+        header: { 'Content-Type': 'application/json' },
+        extraData: JSON.stringify(data)
+      });
+
+      console.info('API_DEBUG', `Raw Login Response: ${response.result}`);
+
+      if (response.responseCode === http.ResponseCode.OK && typeof response.result === 'string') {
+        const parsedResult = JSON.parse(response.result as string) as ApiResponse<LoginResponse>;
+        // 检查 code 是否为200，并从 data 字段里取 token
+        if (parsedResult && parsedResult.code === 200 && parsedResult.data && parsedResult.data.token) {
+          return parsedResult.data; // 返回包含 token 的 data 对象
+        } else {
+          // 如果 code 不是 200 或数据结构不对，抛出后端返回的错误信息
+          throw new Error(parsedResult.message || '登录失败');
+        }
+      }
+    } catch(error) {
+      console.error('API_DEBUG', `Exception during login request: ${JSON.stringify(error)}`);
+      throw new Error(JSON.stringify(error));
+    }
+    throw new Error('登录请求失败，请检查网络');
+  }
+
   // Corresponds to getDefects in defects.js
   async getDefects(params: GetDefectsParams): Promise<GetDefectsResponse> {
     if (USE_REAL_API) {
       const httpRequest = http.createHttp();
-      // This is a simplified GET request. You'd need to properly build the URL with params.
-      const response = await httpRequest.request(`${BASE_URL}/defects?page=${params.currentPage}&pageSize=${params.pageSize}`);
-      return JSON.parse(response.result as string) as GetDefectsResponse;;
+
+      // 关键修正：对所有查询参数进行URL编码
+      const taskName = encodeURIComponent(params.taskName || '');
+      const defectType = encodeURIComponent(params.defectType || '');
+      const severity = encodeURIComponent(params.severity || '');
+      const currentStatus = encodeURIComponent(params.currentStatus || '');
+
+      const url = `${BASE_URL}/defects?page=${params.currentPage}&pageSize=${params.pageSize}&taskName=${taskName}&defectType=${defectType}&severity=${severity}&currentStatus=${currentStatus}`;
+
+      try {
+        const headers: Record<string, string> = {};
+        const token = authService.getToken();
+        if (token) {
+          headers['Authorization'] = token;
+        }
+
+        const response = await httpRequest.request(url, {
+          method: http.RequestMethod.GET,
+          header: headers
+        });
+
+        console.info('API_DEBUG', `Raw response from getDefects: ${response.result}`);
+        if (response.responseCode === http.ResponseCode.OK && typeof response.result === 'string' && response.result.length > 0) {
+          const parsedResult = JSON.parse(response.result as string) as ApiResponse<GetDefectsResponse>;
+          if (parsedResult && parsedResult.data && Array.isArray(parsedResult.data.list)) {
+            return parsedResult.data;
+          }
+        }
+        return { list: [], total: 0 };
+      } catch (error) {
+        console.error('API_DEBUG', `getDefects: Exception: ${JSON.stringify(error)}`);
+        return { list: [], total: 0 };
+      }
     } else {
-      // Mock filtering logic from DefectManagement.vue
       return new Promise((resolve) => {
         setTimeout(() => {
           const filteredData = mockDataSource.filter(item => {
@@ -85,19 +204,33 @@ class ApiService {
           const list = filteredData.slice(start, end);
           const responseData: GetDefectsResponse = { list, total };
           resolve(responseData);
-        }, 500); // Simulate network delay
+        }, 500);
       });
     }
   }
 
   // Corresponds to addDefect in defects.js
-  async addDefect(data:  AddDefectData): Promise<void> {
+  async addDefect(data: AddDefectData): Promise<void> {
     if (USE_REAL_API) {
       const httpRequest = http.createHttp();
-      await httpRequest.request(`${BASE_URL}/defects`, {
-        method: http.RequestMethod.POST,
-        extraData: JSON.stringify(data)
-      });
+      try {
+        // 修正：使用 Record<string, string> 作为 header 的类型
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        const token = authService.getToken();
+        if (token) {
+          headers['Authorization'] = token;
+        }
+
+        await httpRequest.request(`${BASE_URL}/defects`, {
+          method: http.RequestMethod.POST,
+          header: headers,
+          extraData: JSON.stringify(data)
+        });
+      } catch (error) {
+        console.error('API_DEBUG', `addDefect: Exception: ${JSON.stringify(error)}`);
+      }
     } else {
       return new Promise(resolve => {
         setTimeout(() => {
@@ -135,10 +268,24 @@ class ApiService {
   async updateDefectStatus(defectId: string, status: '已整改'): Promise<void> {
     if (USE_REAL_API) {
       const httpRequest = http.createHttp();
-      await httpRequest.request(`${BASE_URL}/defects/${defectId}/status`, {
-        method: http.RequestMethod.PUT,
-        extraData: { status }
-      });
+      try {
+        // 修正：使用 Record<string, string> 作为 header 的类型
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        const token = authService.getToken();
+        if (token) {
+          headers['Authorization'] = token;
+        }
+
+        await httpRequest.request(`${BASE_URL}/defects/${defectId}/status`, {
+          method: http.RequestMethod.PUT,
+          header: headers,
+          extraData: JSON.stringify({ status: status })
+        });
+      } catch (error) {
+        console.error('API_DEBUG', `updateDefectStatus: Exception: ${JSON.stringify(error)}`);
+      }
     } else {
       return new Promise(resolve => {
         const item = mockDataSource.find(d => d.defectId === defectId);
@@ -158,44 +305,78 @@ class ApiService {
   async getTasks(params?: GetTasksParams): Promise<Task[]> {
     if (USE_REAL_API) {
       const httpRequest = http.createHttp();
-      // 真实 API 请求
-      const response = await httpRequest.request(`${BASE_URL}/tasks`, {
-        method: http.RequestMethod.GET,
-        extraData: params
-      });
-      const result = JSON.parse(response.result as string) as GetTasksResponse;
-      return result.list; // 假设后端返回 { list: [], total: ... }
+      const url = `${BASE_URL}/tasks?startDate=${params?.startDate || ''}&endDate=${params?.endDate || ''}`;
+      try {
+        // 修正：使用 Record<string, string> 作为 header 的类型
+        const headers: Record<string, string> = {};
+        const token = authService.getToken();
+        if (token) {
+          headers['Authorization'] = token;
+        }
+
+        const response = await httpRequest.request(url, {
+          method: http.RequestMethod.GET,
+          header: headers
+        });
+
+        if (response.responseCode === http.ResponseCode.OK && typeof response.result === 'string' && response.result.length > 0) {
+          const parsedResult = JSON.parse(response.result as string) as ApiResponse<GetTasksResponse>;
+
+          // 修正2：检查 parsedResult.data.records 是否为数组
+          if (parsedResult && parsedResult.data && Array.isArray(parsedResult.data.records)) {
+            // 修正3：返回 records 数组
+            return parsedResult.data.records;
+          } else {
+            console.error('API_DEBUG', 'getTasks: Backend response "data" field is incorrect, expected a "records" array.');
+            return [];
+          }
+        } else {
+          console.error('API_DEBUG', `getTasks: Request failed. Code: ${response.responseCode}`);
+          return [];
+        }
+      } catch (error) {
+        console.error('API_DEBUG', `getTasks: Exception: ${JSON.stringify(error)}`);
+        return [];
+      }
     } else {
-      // 模拟数据逻辑
       return new Promise((resolve) => {
         setTimeout(() => {
-          // 模拟筛选，实际项目中后端会处理
           resolve(mockTasks);
         }, 300);
       });
     }
   }
-
   /**
    * 删除一个任务
    * @param taskId
    */
-  async deleteTask(taskId: string): Promise<void> {
+  /**
+   * 删除一个任务
+   * @param id - 任务的数字ID
+   */
+  async deleteTask(id: number): Promise<void> {
     if (USE_REAL_API) {
       const httpRequest = http.createHttp();
-      await httpRequest.request(`${BASE_URL}/tasks/${taskId}`, {
-        method: http.RequestMethod.DELETE
-      });
-    } else {
-      // 模拟删除
-      return new Promise((resolve) => {
-        const index = mockTasks.findIndex(t => t.taskId === taskId);
-        if (index > -1) {
-          mockTasks.splice(index, 1);
+      try {
+        const headers: Record<string, string> = {};
+        const token = authService.getToken();
+        if (token) {
+          // 修正：直接发送原始token，不再添加 "Bearer " 前缀
+          headers['Authorization'] = token;
         }
-        resolve();
-      });
+        await httpRequest.request(`${BASE_URL}/tasks/${id}`, {
+          method: http.RequestMethod.DELETE,
+          header: headers
+        });
+      } catch (error) {
+        console.error('API_DEBUG', `deleteTask: Exception: ${JSON.stringify(error)}`);
+      }
     }
+  }
+
+
+  getAuthHeader(): Object | undefined {
+    throw new Error('Method not implemented.');
   }
 }
 

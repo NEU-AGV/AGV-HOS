@@ -30,16 +30,25 @@ struct TaskListPage {
   @State displayYear: number = new Date().getFullYear();
   @State displayMonth: number = new Date().getMonth() + 1; // 1-12
   @State selectedDate: Date = new Date();
-  @State today: Date = new Date(); // 用于高亮当天
+  @State today: Date = new Date();
   @State calendarDays: CalendarDay[] = [];
 
-  aboutToAppear() {
-    this.generateCalendar();
-  }
-
-  async generateCalendar() {
+  // 修正1：将数据刷新逻辑封装成一个独立方法
+  async refreshData() {
     await this.fetchTasksForMonth(this.displayYear, this.displayMonth);
     this.updateCalendarDays(this.displayYear, this.displayMonth);
+  }
+
+  // aboutToAppear 只在页面首次加载时调用
+  aboutToAppear() {
+    this.refreshData();
+  }
+
+  // 修正2：新增 onPageShow，每次页面显示时都会调用
+  onPageShow() {
+    // 为了防止首次进入时重复加载，可以加一个判断
+    // 但更简单的做法是，让它每次都刷新，以保证数据最新
+    this.refreshData();
   }
 
   async fetchTasksForMonth(year: number, month: number) {
@@ -69,6 +78,8 @@ struct TaskListPage {
     for (let i = 1; i <= daysInMonth; i++) {
       const currentDate = new Date(year, month - 1, i);
       const tasksOnDay = this.allTasksInMonth.filter(task => {
+        // 使用 plannedStartTime 来判断任务日期
+        if (!task.plannedStartTime) return false;
         const taskDate = new Date(task.plannedStartTime);
         return taskDate.getFullYear() === year && taskDate.getMonth() === (month - 1) && taskDate.getDate() === i;
       });
@@ -97,42 +108,41 @@ struct TaskListPage {
     if (newMonth < 1) { newMonth = 12; newYear--; }
     this.displayYear = newYear;
     this.displayMonth = newMonth;
-    this.generateCalendar();
+    this.refreshData(); // 切换月份时也调用刷新
   }
 
   build() {
     Column() {
-      // 1. 标题与模块切换
+      // 标题与模块切换
       Row() {
         Text('任务列表')
           .fontSize(24).fontWeight(FontWeight.Bold)
-
-        // 使用 Blank 组件将按钮推到最右侧
         Blank()
-
         Button('缺陷管理')
           .onClick(() => {
             router.pushUrl({ url: 'pages/DefectListPage' })
           })
           .type(ButtonType.Capsule)
-          .backgroundColor('#007DFF') // 使用一个醒目的颜色
+          .backgroundColor('#007DFF')
       }
-      .width('100%').padding(10). alignItems(VerticalAlign.Center)
-      // 2. 月份切换器
+      .width('100%').padding(10)
+      .alignItems( VerticalAlign.Center)
+
+      // 月份切换器
       Row({ space: 20 }) {
         Button({ type: ButtonType.Circle, stateEffect: true }) { Text('<') }.onClick(() => this.changeMonth(-1)).backgroundColor(0xFFFFFF).fontColor(Color.Black)
         Text(`${this.displayYear}年 ${this.displayMonth}月`).fontSize(22).fontWeight(FontWeight.Bold)
         Button({ type: ButtonType.Circle, stateEffect: true }) { Text('>') }.onClick(() => this.changeMonth(1)).backgroundColor(0xFFFFFF).fontColor(Color.Black)
-      }.padding({ top: 15, bottom: 15 }).width('100%').justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      // 3. 星期头部
+      }.padding({ top: 15, bottom: 15 }).alignItems( VerticalAlign.Center).width('100%').justifyContent(FlexAlign.Center)
+
+      // 星期头部
       GridRow({ columns: 7, gutter: { x: 5 } }) {
         ForEach(['日', '一', '二', '三', '四', '五', '六'], (day: string) => {
           GridCol() { Text(day).width('100%').height(30).textAlign(TextAlign.Center).fontColor('#666666') }
         })
       }.padding({ bottom: 5 })
 
-      // 4. 日期网格
+      // 日期网格
       Grid() {
         ForEach(this.calendarDays, (item: CalendarDay) => {
           GridItem() {
@@ -168,17 +178,16 @@ struct TaskListPage {
             .alignItems(HorizontalAlign.Center)
             .backgroundColor(this.selectedDate.toDateString() === item.date.toDateString() ? '#e6f0ff' : '#f7f7f7')
             .borderRadius(8)
-            .opacity(item.month === 'current' ? 1.0 : 0.4) // 非本月日期变淡
-            .border({ // 高亮当天
+            .opacity(item.month === 'current' ? 1.0 : 0.4)
+            .border({
               width: this.today.toDateString() === item.date.toDateString() ? 2 : 0,
-              color: '#007DFF',
-              radius: 8
+              color: '#007DFF', radius: 8
             })
             .onClick(() => {
               if (item.month !== 'current') {
                 this.displayYear = item.date.getFullYear();
                 this.displayMonth = item.date.getMonth() + 1;
-                this.generateCalendar();
+                this.refreshData();
               }
               this.filterTasksForDate(item.date);
 
@@ -190,7 +199,7 @@ struct TaskListPage {
         })
       }.columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr').rowsGap(5).columnsGap(5)
 
-      // 5. 当日任务列表
+      // 当日任务列表
       Text(`${this.selectedDate.toLocaleDateString()} 的任务列表`)
         .fontSize(18).fontWeight(500)
         .padding({ top: 20, bottom: 10 })
@@ -208,17 +217,13 @@ struct TaskListPage {
                   .fontSize(12).fontColor(Color.Gray)
               }.alignItems(HorizontalAlign.Start).layoutWeight(1)
               Text(task.status).fontSize(14).fontColor(getStatusColor(task.status))
-            }
+            }.alignItems( VerticalAlign.Center)
             .padding(12)
-            .alignItems(VerticalAlign.Center)
             .backgroundColor(Color.White)
             .borderRadius(10)
-            // 手动定义一个卡片阴影效果
             .shadow({ radius: 6, color: 'rgba(0,0,0,0.1)', offsetX: 2, offsetY: 2 })
-            // 使用 stateStyles 来定义按下时的样式
             .stateStyles({
               pressed: {
-                // 定义当组件被按下时，背景颜色会发生变化
                 .backgroundColor('#f0f0f0')
               }
             })

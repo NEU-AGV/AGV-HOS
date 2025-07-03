@@ -103,7 +103,7 @@ struct TaskDetailPage {
                   ]
                 });
                 if (confirm.index === 1) { // 用户点击了“删除”
-                  await ApiService.deleteTask(this.task.taskId);
+                  await ApiService.deleteTask(this.task.id);
                   promptAction.showToast({ message: '任务删除成功' });
                   router.back();
                 }

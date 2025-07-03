@@ -4,6 +4,7 @@ import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { Defect } from '../model/Defect';
 import DefectService from '../services/ApiService';
+import ApiService from '../services/ApiService';
 
 // 新增：为页面路由参数定义接口
 interface DetailPageParams {
@@ -103,15 +104,39 @@ struct DefectDetailPage {
           }
           .backgroundColor('#fff').borderRadius(8)
 
-          // Action Button - Corresponds to handleMarkAsRectified
+          // 关键修正：修改 onClick 的逻辑
           if (this.defect.currentStatus !== '已整改') {
             Button('标记为已整改')
               .width('100%').height(45).type(ButtonType.Capsule)
               .onClick(async () => {
-                await DefectService.updateDefectStatus(this.defect.defectId, '已整改');
+                await ApiService.updateDefectStatus(this.defect.defectId, '已整改');
                 promptAction.showToast({ message: '状态更新成功！' });
-                // Update local state to reflect change
-                this.defect.currentStatus = '已整改';
+
+                // 创建一个包含更新数据的新对象
+                const updatedDefect: Defect = {
+                  id: this.defect.id,
+                  defectId: this.defect.defectId,
+                  taskId: this.defect.taskId,
+                  taskName: this.defect.taskName,
+                  defectType: this.defect.defectType,
+                  description: this.defect.description,
+                  imageUrl: this.defect.imageUrl,
+                  severity: this.defect.severity,
+                  isVerified: this.defect.isVerified,
+                  discoverer: this.defect.discoverer,
+                  discoveryTime: this.defect.discoveryTime,
+                  discoveryMethod: this.defect.discoveryMethod,
+                  confirmer: this.defect.confirmer,
+                  confirmationTime: this.defect.confirmationTime,
+                  handler: this.defect.handler,
+                  handlingStartTime: this.defect.handlingStartTime,
+                  handlingResult: this.defect.handlingResult,
+                  currentStatus: '已整改', // 覆盖需要更新的属性
+                  handlingCompletionTime: new Date().toISOString().slice(0, 16).replace('T', ' ')
+                };
+
+                // 将 @State 变量指向一个全新的对象，以触发UI刷新
+                this.defect = updatedDefect;
               })
               .margin({ top: 20 })
           }

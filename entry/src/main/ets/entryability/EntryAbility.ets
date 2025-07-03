@@ -19,7 +19,7 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
     // ---- 关键修正：将 'pages/Index' 修改为 'pages/DefectListPage' ----
-    windowStage.loadContent('pages/DefectListPage', (err) => {
+    windowStage.loadContent('pages/LoginPage', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
         return;
