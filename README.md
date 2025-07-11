@@ -42,7 +42,7 @@
 #### 安装步骤
 1.  **克隆仓库**
     ```bash
-    git clone [您的仓库地址]
+    git clone https://github.com/NEU-AGV/AGV-HOS
     ```
 
 2.  **打开项目**
